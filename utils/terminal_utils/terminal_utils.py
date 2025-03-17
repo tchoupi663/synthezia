@@ -1,5 +1,7 @@
 import colorama
-from colorama import Fore, Back, Style
+from colorama import Fore, Style
+import time
+import sys
 
 colorama.init()
 
@@ -34,3 +36,19 @@ def print_white(text):
 
 def print_black(text):
     print(Fore.BLACK + text + Style.RESET_ALL)
+
+
+def loading_bar(
+    iteration,
+    total,
+    decimals=1,
+    length=50,
+    fill="+",  # █
+    print_end="\r",
+):
+    percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
+    filled_length = int(length * iteration // total)
+    bar = fill * filled_length + "-" * (length - filled_length)
+    print(f"\rAnalyse... |{bar}| {percent}%", end=print_end)
+    if iteration == total:
+        print()

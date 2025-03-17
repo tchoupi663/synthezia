@@ -1,11 +1,10 @@
 import requests
 from bs4 import BeautifulSoup
-import utils.colour_utils.colour_printer as cp
+import utils.terminal_utils.terminal_utils as cp
 import os
 
-
 base_url = "https://www.legifrance.gouv.fr/juri/id/"
-changing_part = "JURITEXT000051311000"
+changing_part = "JURITEXT000051311677"
 query_params = "?page=1&pageSize=100&searchField=ALL&searchType=ALL&sortValue=DATE_DESC&tab_selection=juri&typePagination=DEFAULT"
 headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Safari/537.36"
@@ -22,6 +21,8 @@ def fetch_page(page_number):
     global file_id
     url = base_url + current_id + query_params
     print(f"Fetching URL: {url}")
+    global address
+    address = url
     response = requests.get(url, headers=headers)
     if response.status_code == 200:
         file_id = 51311794 + page_number
@@ -73,13 +74,14 @@ def ensure_folder_exists(folder_path):
 
 def copy_to_file(content):
     if not ensure_folder_exists(output_folder):
-        cp.print_red("")
+        cp.print_red("Failed to create output folder.")
         return
 
     filename = f"JURITEXT{file_id:012}.txt"
     file_path = os.path.join(output_folder, filename)
 
     with open(file_path, "w", encoding="utf-8") as file:
+        file.write(address + "\n")
         for text in content:
             file.write(text)
 
