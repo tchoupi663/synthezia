@@ -78,36 +78,6 @@ def save_response_as_json(response):
         return False
 
 
-def extract_from_json(json_path=None, json_folder="donnees_json"):
-
-    results = []
-
-    json_folder = "./donnees_json"
-
-    if not os.path.exists(json_folder):
-        tu.print_red(f"Le dossier {json_folder} n'existe pas.")
-        return results
-
-    json_files = [f for f in os.listdir(json_folder) if f.endswith(".json")]
-
-    if not json_files:
-        tu.print_yellow(f"Le dossier {json_folder} est vide")
-        return results
-
-    for json_file in json_files:
-        file_path = os.path.join(json_folder, json_file)
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            results.append(data)
-
-        except (Exception, json.JSONDecodeError) as e:
-            tu.print_red(f"Erreur lecture du JSON du fichier {file_path}: {e}")
-            continue
-
-    return results
-
-
 def extract_metadata(data):
     metadata = {
         "lien_internet": data["lien_internet"],

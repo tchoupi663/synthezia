@@ -5,7 +5,7 @@ import os
 import sys
 
 base_url = "https://www.legifrance.gouv.fr/juri/id/"
-changing_part = 51151385  # 51311677 #51284058 #51243729 #51151385
+changing_part = 51151385  # 51311677 #51284058 #51243729 #51151385 #000047781047
 query_params = "?page=1&pageSize=100&searchField=ALL&searchType=ALL&sortValue=DATE_DESC&tab_selection=juri&typePagination=DEFAULT"
 headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Safari/537.36"

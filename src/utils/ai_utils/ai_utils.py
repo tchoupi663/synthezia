@@ -12,6 +12,12 @@ from sklearn.metrics.pairwise import cosine_similarity
 from nltk.stem import SnowballStemmer
 from nltk.tokenize import word_tokenize
 import utils.file_utils.file_utils as fu
+import re
+import spacy
+from nltk.corpus import stopwords
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+import json
 
 
 class DocumentJuridique(BaseModel):
@@ -96,3 +102,110 @@ def traitement_textes():
     sys.stdout.write("\r" + " " * 80 + "\r")
     sys.stdout.flush()
     tu.print_green("Extraction des données réussie.")
+
+
+nlp = spacy.load("fr_core_news_sm")
+
+
+def extract_text_and_preprocess(file_path):
+    try:
+        with open(file_path, "r", encoding="utf-8") as file:
+            cases = json.load(file)
+
+        normalized_texts = []
+        metadata = []
+        for idx, case in enumerate(cases):
+            text = f"SUMMARY: {case['résumé']} CONTEXT: {' '.join(case['éléments_contexte'])} ARTICLES: {' '.join(case['articles_pertinents'])}"
+            text = text.lower()
+            text = re.sub(r"[^\w\s]", "", text)
+            doc = nlp(text)
+            tokens = [
+                token.lemma_
+                for token in doc
+                if token.text not in stopwords.words("french") and token.is_alpha
+            ]
+            normalized_text = " ".join(tokens)
+            normalized_texts.append(normalized_text)
+            metadata.append(
+                {
+                    "file": os.path.basename(file_path),
+                    "case_index": idx,
+                    "identifiant_document": case.get("identifiant_document", "N/A"),
+                    "date": case.get("date", "N/A"),
+                    "décision": case.get("décision", "N/A"),
+                    "summary": case["résumé"],
+                    "context": case["éléments_contexte"],
+                    "articles": case["articles_pertinents"],
+                }
+            )
+
+        return normalized_texts, metadata
+    except (KeyError, Exception, json.JSONDecodeError) as e:
+        print(f"Erreur -> {file_path}: {e}")
+        return [], []
+
+
+def normalize_user_input(user_input):
+    user_input = user_input.lower()
+    user_input = re.sub(r"[^\w\s]", "", user_input)
+    doc = nlp(user_input)
+    tokens = [
+        token.lemma_
+        for token in doc
+        if token.text not in stopwords.words("french") and token.is_alpha
+    ]
+    return " ".join(tokens)
+
+
+def show_results(similarity_list, metadata_list):
+    print("Similarity results with user's description:")
+    for i, similarity in similarity_list:
+        meta_i = metadata_list[i]
+        if similarity < 1:
+            continue
+        print(
+            f"Similarity between user's description and document {i+1} (File: {meta_i['file']}, Case: {meta_i['case_index']}, ID: {meta_i['identifiant_document']}): {similarity:.2f}%"
+        )
+        print(f"Summary of Document {i+1}: {meta_i['summary']}")
+        print(f"Context of Document {i+1}: {', '.join(meta_i['context'])}")
+        print(f"Articles of Document {i+1}: {', '.join(meta_i['articles'])}")
+        print("---")
+
+
+def find_recommandations(usr_input: str):
+    results = []
+    metadata_list = []
+
+    json_folder = "./donnees_json"
+
+    json_files = [f for f in os.listdir(json_folder) if f.endswith(".json")]
+
+    for json_file in json_files:
+        file_path = os.path.join(json_folder, json_file)
+        texts, metadata = extract_text_and_preprocess(file_path)
+        if texts:
+            results.extend(texts)
+            metadata_list.extend(metadata)
+
+    user_description = usr_input
+
+    normalized_user_description = normalize_user_input(user_description)
+
+    results.append(normalized_user_description)
+
+    vectorizer = TfidfVectorizer(
+        strip_accents="ascii",
+        lowercase=True,
+        norm="l2",
+    )
+
+    tfidf_matrix = vectorizer.fit_transform(results)
+
+    cosine_sim_matrix = cosine_similarity(tfidf_matrix[-1], tfidf_matrix[:-1])
+
+    similarity_list = [
+        (i, similarity * 100) for i, similarity in enumerate(cosine_sim_matrix[0])
+    ]
+
+    similarity_list.sort(key=lambda x: x[1], reverse=True)
+    show_results(similarity_list, metadata_list)
