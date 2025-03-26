@@ -9,8 +9,6 @@ import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-from nltk.stem import SnowballStemmer
-from nltk.tokenize import word_tokenize
 import utils.file_utils.file_utils as fu
 import re
 import spacy
@@ -53,7 +51,7 @@ POUR LE RÉSUME, LA DÉCISION ET LES ÉLÉMENTS DE CONTEXTE, NE PAS ECRIRE DE CO
 Exemple de la manière dont les données pourraient apparaître en utilisant le schéma
 document_json = {
     "lien_internet": "https://www.legifrance.gouv.fr/juri/id/JURITEXT000051311794?page=1&pageSize=100&searchField=ALL&searchType=ALL&sortValue=DATE_DESC&tab_selection=juri&typePagination=DEFAULT",
-    "identifiant_document": "K 22-20.935",
+    "number": "K 22-20.935",
     "date": "2023-01-15",
     "décision": "tribunal statué faveur demandeur",
     "éléments_contexte": ["droit travail", "licenciement abusif", "indemnisation"],
@@ -81,23 +79,21 @@ def process_file(file_path):
         pass
 
 
-def traitement_textes():
+def traitement_textes(worker_count=2):
     files = os.listdir("./donnees")
     text_files = [os.path.join("./donnees", file) for file in files]
 
-    total_items = len(text_files)
-    with ThreadPoolExecutor(max_workers=2) as executor:
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
         futures = {
             executor.submit(process_file, text_file): text_file
             for text_file in text_files
         }
 
-        for i, future in enumerate(as_completed(futures), 1):
+        for future in enumerate(as_completed(futures), 1):
             try:
                 future.result()
             except Exception as e:
                 print(f"Erreur lors du traitement du fichier {futures[future]} : {e}")
-            tu.loading_bar(i, total_items)
 
     sys.stdout.write("\r" + " " * 80 + "\r")
     sys.stdout.flush()

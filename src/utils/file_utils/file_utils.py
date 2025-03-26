@@ -1,7 +1,7 @@
 import pymupdf
 import os
 import json
-from utils.scrape_utils.scrape_utils import ensure_folder_exists
+from utils.dbUpdate.dbUpdate import ensure_folder_exists
 import utils.terminal_utils.terminal_utils as tu
 
 

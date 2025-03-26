@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import utils.terminal_utils.terminal_utils as cp
-import utils.scrape_utils.scrape_utils as sc
+import utils.dbUpdate.dbUpdate as db
 import utils.ai_utils.ai_utils as ai
 from sys import exit
 
@@ -11,11 +11,8 @@ def display_message():
     print("This is a temporary message.")
 
 
-def scrape():
-    num_pages = int(
-        input("Combien de documents de jurisprudence voulez-vous extraire? ")
-    )
-    sc.extract_from_website(num_pages)
+def retrieve():
+    db.retrieve_all()
 
 
 def analyse():
@@ -25,7 +22,7 @@ def analyse():
 def recommandations():
     # usr_input = input("Entrez votre description: ")
     # print("user input: ", usr_input)
-    usr_input = "L'individu a été victime d'un accident de travail et a subi une blessure à la jambe. Il a été hospitalisé pendant 3 jours et a reçu un traitement médical. L'employeur a refusé de payer les frais médicaux. L'individu a intenté une action en justice contre l'employeur pour obtenir une indemnisation pour les frais médicaux et les dommages et intérêts. L'affaire a été portée devant le tribunal du travail."
+    usr_input = "L'individu a été victime d'un accident de travail et a subi une blessure à la jambe. Il a été hospitalisé pendant 3 jours et a reçu un traitement médical. L'employeur a refusé de payer les frais médicaux. L'individu a intenté une action en justice contre l'employeur pour obtenir une indemnisation pour les frais médicaux et les dommages et intérêts."
     ai.find_recommandations(usr_input)
 
 
@@ -47,21 +44,18 @@ def main():
     )
     while True:
         cp.print_magenta("\n--- Menu ---")
-        print("1. Display a message")
-        print("2. Extraction de documents de jurisprudence")
-        print("3. Extraction des données importantes")
-        print("4. Donner des recommendantions")
+        print("1. Extraction de documents de jurisprudence depuis le web")
+        print("2. Analyse des documents")
+        print("3. Donner des recommendantions")
         print("9. Quitter")
 
         choice = input("Selectionnez une options (1-9): ")
 
         if choice == "1":
-            display_message()
+            retrieve()
         elif choice == "2":
-            scrape()
-        elif choice == "3":
             analyse()
-        elif choice == "4":
+        elif choice == "3":
             recommandations()
         elif choice == "9":
             exit_program()
