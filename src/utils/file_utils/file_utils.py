@@ -55,22 +55,15 @@ def save_text_to_txt(text: str, output_path: str) -> bool:
 
 
 def save_response_as_json(response):
-    if not ensure_folder_exists("donnees_json"):
-        tu.print_red("Failed to create output folder.")
-        return
-
     try:
         response_data = json.loads(response)
+        file_name = response_data.get("id", "N/A")
 
-        if isinstance(response_data, list) and len(response_data) > 0:
-            document_id = response_data[0].get("identifiant_document", "unknown_doc")
-
-        json_file = os.path.join("donnees_json", f"{document_id}.json")
+        json_file = os.path.join("processed_data", f"PROC_{file_name}.json")
 
         with open(json_file, "w", encoding="utf-8") as f:
             json.dump(response_data, f, ensure_ascii=False, indent=4)
 
-        # tu.print_blue(f"Risposta salvata in: {json_file}")
         return True
 
     except (Exception, json.JSONDecodeError) as e:

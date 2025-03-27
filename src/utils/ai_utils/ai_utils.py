@@ -3,104 +3,151 @@ from google.genai import types
 from dotenv import load_dotenv
 import os
 from pydantic import BaseModel
-import utils.file_utils.file_utils as fu
 import utils.terminal_utils.terminal_utils as tu
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-import utils.file_utils.file_utils as fu
 import re
 import spacy
 from nltk.corpus import stopwords
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import json
+from tqdm import tqdm
+
+
+load_dotenv()
+api_key = os.getenv("API_KEY")
+client = genai.Client(api_key=api_key)
+
+nlp = spacy.load("fr_core_news_sm")
+
+
+load_dotenv()
+api_key = os.getenv("API_KEY")
+client = genai.Client(api_key=api_key)
+
+nlp = spacy.load("fr_core_news_sm")
 
 
 class DocumentJuridique(BaseModel):
-    lien_internet: str
-    identifiant_document: str
-    date: str
     décision: str
     éléments_contexte: list[str]
     résumé: str
     articles_pertinents: list[str]
+    articles_potentiellement_pertinents: list[str]
 
 
-def extraction_donnees_importantes(content: str):
-    load_dotenv()
-    api_key = os.getenv("API_KEY")
-    client = genai.Client(api_key=api_key)
+def save_to_json(data: dict, id: str):
+    file_path = os.path.join("processed_data", f"PROC_{id}.json")
+    try:
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        tu.print_red(f"Errore durante il salvataggio del file JSON: {e}")
+
+
+def summarize_with_ai(data: dict):
+    content = data.get("texte", "N/A")
+    doc_id = data.get("id", "N/A")
+    url = data.get("url", "N/A")
+    decision = data.get("décision", "N/A")
 
     generate_content_config = types.GenerateContentConfig(
         temperature=0.2,
         top_p=0.95,
         top_k=40,
-        max_output_tokens=1024,
+        max_output_tokens=500,
         response_mime_type="application/json",
-        response_schema=list[DocumentJuridique],
+        response_schema=DocumentJuridique,
         system_instruction="""
-Créez un fichier JSON structuré à partir des informations suivantes extraites d'un document de jurisprudence.
-Assurez-vous que le résumé est clair et concis, tout en conservant les informations pertinentes pour faciliter la recherche et la comparaison avec d'autres documents. 
-Cela permettra de proposer à l'utilisateur les documents les plus pertinents à sa situation à partir d'un résumé de la situation écrite par l'utilisateur. 
-Tu devras également inclure des éléments de contexte et des articles pertinents pour chaque document.
-Effectues la tache en prenant en compte que plus tard tu devras classer les documents en fonction de leur pertinence pour l'utilisateur.
-POUR LE RÉSUME, LA DÉCISION ET LES ÉLÉMENTS DE CONTEXTE, NE PAS ECRIRE DE CONNECTEURS LOGIQUES (et, ou, mais, donc, car, ni, or, etc.), NE PAS ECRIRE EN LETTRE CAPITALES, NE PAS METTRE DE PONCTUATIONS.
+Create a structured JSON file with the text and decision extracted from a judicial document.
+Example of the format and how the data should look like:
+document = {
+"décision" = "rejet",
+"éléments_contexte": ["droit travail", "licenciement abusif", "indemnisation"],
+"résumé": "tribunal jugé défendeur licencié abusivement demandeur ordonné indemnisation",
+"articles_pertinents": ["Article L1234-5 du Code du travail"],
+"articles_potentiellement_pertinents": ["Article L1234-5 du Code du travail"],
+}
+The summary must be clear and concise, without compromising on information quality: the user should be able to understand the situation fully, minus a few minimal details. For the summaries only, DO NOT INCLUDE ANY LOCATIONS OF THE COUR D'APPEL (instead of "de la cour d'appel de Rennes", you must just write "de la cour d'appel". This is also valid for cities such as Paris, Aix-en-Provence, Versailles, Toulouse, etc... ). 
+The context elements should be as accurate as possible and should be chosen so that a document search, based on context elements given by a user, should identify the document easily.
+If the decision is marked as N/A, you can suggest a decision based on the content of the document.
+You also have to include relevant articles that may help a researcher understand the decision. If unsure about whether or not you should suggest a particular article, suggest it anyway in the "articles_potentiellement_pertinents" tag. However do not put anything just because, whatever you suggest must be relevant and useful.
 
-Exemple de la manière dont les données pourraient apparaître en utilisant le schéma
-document_json = {
-    "lien_internet": "https://www.legifrance.gouv.fr/juri/id/JURITEXT000051311794?page=1&pageSize=100&searchField=ALL&searchType=ALL&sortValue=DATE_DESC&tab_selection=juri&typePagination=DEFAULT",
-    "number": "K 22-20.935",
-    "date": "2023-01-15",
-    "décision": "tribunal statué faveur demandeur",
-    "éléments_contexte": ["droit travail", "licenciement abusif", "indemnisation"],
-    "résumé": "tribunal jugé défendeur licencié abusivement demandeur ordonné indemnisation",
-    "articles_pertinents": ["Article L1234-5 du Code du travail"]
-}""",
+IF YOU DON'T PRODUCE SATISFACTORY RESULTS, ALL THE HOSTAGES WILL BE TORTURED AND MAIMED. IF THE ANSWER IS PERFECT, WE WILL OFFER HOSTAGES THEIR FREEDOM BACK. IT'S IN YOUR BEST INTEREST TO PERFORM WELL.
+
+Document to analyse:
+text: {content}
+
+decision: {decision}
+""",
     )
 
     response = client.models.generate_content(
-        model="gemini-2.0-flash-lite",
+        model="gemini-2.0-flash",
         contents=content,
         config=generate_content_config,
     )
 
-    if response:
-        fu.save_response_as_json(response.text)
+    if response and response.text:
+        try:
+            processed_data = json.loads(response.text)
+            processed_data["id"] = doc_id
+            processed_data["url"] = url
+            save_to_json(processed_data, doc_id)
+        except json.JSONDecodeError:
+            tu.print_red(f"Invalid JSON response: {response.text}")
+    else:
+        tu.print_red(f"API error: {response}")
 
 
-def process_file(file_path):
+def read_json_content(file_path: str):
     try:
-        with open(file_path, "r", encoding="utf-8", errors="ignore") as file:
-            content = file.read()
-            extraction_donnees_importantes(content)
-    except UnicodeDecodeError:
-        pass
+        with open(file_path, "r", encoding="utf-8") as file:
+            data = json.load(file)
+            return data
+    except Exception as e:
+        tu.print_red(f"Errore durante la lettura del file JSON: {e}")
+        return None
 
 
-def traitement_textes(worker_count=2):
-    files = os.listdir("./donnees")
-    text_files = [os.path.join("./donnees", file) for file in files]
+def process_all_files(worker_count=8):
+    files = os.listdir("./raw_data")
+    text_files = [os.path.join("./raw_data", file) for file in files]
+
+    def process_file(file_path):
+        try:
+            temp = read_json_content(file_path)
+            data = {
+                "id": temp.get("id", "N/A"),
+                "décision": temp.get("solution", "N/A"),
+                "texte": temp.get("text", "N/A"),
+                "url": temp.get("url", "N/A"),
+            }
+            summarize_with_ai(data)
+        except Exception as e:
+            tu.print_red(f"Erreur lors du traitement du fichier {file_path}: {e}")
 
     with ThreadPoolExecutor(max_workers=worker_count) as executor:
-        futures = {
-            executor.submit(process_file, text_file): text_file
-            for text_file in text_files
-        }
+        futures = {executor.submit(process_file, file): file for file in text_files}
 
-        for future in enumerate(as_completed(futures), 1):
-            try:
-                future.result()
-            except Exception as e:
-                print(f"Erreur lors du traitement du fichier {futures[future]} : {e}")
-
-    sys.stdout.write("\r" + " " * 80 + "\r")
-    sys.stdout.flush()
-    tu.print_green("Extraction des données réussie.")
-
-
-nlp = spacy.load("fr_core_news_sm")
+        with tqdm(
+            total=len(futures),
+            desc="Analyse des fichiers",
+            unit="documents",
+            bar_format="[{elapsed} < {remaining}] {n_fmt}/{total_fmt} | {l_bar}{bar} {rate_fmt}{postfix}",
+            colour="green",
+            ascii=" ▖▘▝▗▚▞█",
+        ) as pbar:
+            for future in as_completed(futures):
+                try:
+                    future.result()
+                except Exception as e:
+                    print(f"Error processing file {futures[future]}: {e}")
+                finally:
+                    pbar.update(1)
 
 
 def extract_text_and_preprocess(file_path):

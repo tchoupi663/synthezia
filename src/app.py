@@ -16,7 +16,7 @@ def retrieve():
 
 
 def analyse():
-    ai.traitement_textes()
+    ai.process_all_files()
 
 
 def recommandations():

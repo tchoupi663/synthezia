@@ -17,7 +17,6 @@ def save_to_json(data, file_name):
     try:
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=4)
-        # cp.print_green(f"Dati salvati in: {file_path}")
     except Exception as e:
         cp.print_red(f"Errore durante il salvataggio del file JSON: {e}")
 
