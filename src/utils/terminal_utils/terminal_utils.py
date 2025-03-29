@@ -1,6 +1,5 @@
 import colorama
 from colorama import Fore, Style
-import time
 
 colorama.init()
 
