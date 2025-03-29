@@ -16,6 +16,7 @@ from tqdm import tqdm
 import utils.terminal_utils.terminal_utils as cp
 import string
 import pickle
+from typing import List, Optional, Dict
 
 
 load_dotenv()
@@ -25,12 +26,43 @@ client = genai.Client(api_key=api_key)
 nlp = spacy.load("fr_core_news_sm")
 
 
+class Parties(BaseModel):
+    demandeur: List[str]
+    défendeur: List[str]
+
+
+class Arguments(BaseModel):
+    demandeur: str
+    défendeur: str
+
+
+class MontantsFinanciers(BaseModel):
+    réclamation: Optional[str] = None
+    dommages_intérêts: Optional[str] = None
+
+
 class DocumentJuridique(BaseModel):
-    décision: str
-    éléments_contexte: list[str]
-    résumé: str
-    articles_pertinents: list[str]
-    articles_potentiellement_pertinents: list[str]
+    solution: str
+    parties: Parties
+    contexte: List[str]
+    faits: str
+    problème_juridique: str
+    arguments: Arguments
+    motifs_décision: str
+    articles_cités: List[str]
+    articles_suggérés: List[str]
+    montants_financiers: MontantsFinanciers
+
+
+class UserPrompt(BaseModel):
+    solution: str
+    contexte: List[str]
+    faits: str
+    problème_juridique: str
+    arguments: Arguments
+    motifs_décision: str
+    articles_cités: List[str]
+    montants_financiers: MontantsFinanciers
 
 
 def save_to_json(data: dict, id: str):
@@ -46,51 +78,56 @@ def summarize_with_ai(data: dict):
     content = data.get("texte", "N/A")
     doc_id = data.get("id", "N/A")
     url = data.get("url", "N/A")
-    decision = data.get("décision", "N/A")
 
     generate_content_config = types.GenerateContentConfig(
-        temperature=0.2,
+        temperature=0.8,
         top_p=0.95,
         top_k=40,
-        max_output_tokens=500,
+        max_output_tokens=2048,
         response_mime_type="application/json",
         response_schema=DocumentJuridique,
         system_instruction="""
-Create a structured JSON file with the text extracted from a judicial document.  
+Extract structured legal information from the following judicial document and output it in **VALID JSON format**, following the structure below.
 
-The JSON file should follow the format of the example below. The keys should be in French, and the values should also be in French.  
-
-Example of the format:  
-document = {  
-"décision": "rejet",  
-"éléments_contexte": ["droit travail", "licenciement abusif", "indemnisation"],  
-"résumé": "Le tribunal a jugé que le défendeur a licencié abusivement le demandeur et a ordonné une indemnisation.",  
-"articles_pertinents": ["Article L1234-5 du Code du travail"],  
-"articles_potentiellement_pertinents": ["Article L1234-5 du Code du travail"]  
-}  
-
-### Instructions for the summary:  
-- The summary must be clear and concise but must not omit critical details. It should allow the user to fully understand the case, except for minor details.  
-- It must include all key financial amounts and legal justifications.  
-- It must explicitly mention contradictions or legal inconsistencies cited in the document.  
-- It must describe the nature of the investment, the obligations of each party, and the procedural decisions taken.  
-
-### Instructions for categorizing the decision:  
-- If the decision is not explicitly stated in the document, you must determine whether it falls under "arrêt," "cassation partielle," or "cassation totale":  
-  - "Cassation totale" if the entire reasoning of the appellate court is invalidated.  
-  - "Cassation partielle" if only specific provisions are overturned.  
-  - "Arrêt" if the decision is upheld.  
-
-### Instructions for legal articles:  
-- All legal articles explicitly mentioned in the document must be included in "articles_pertinents."  
-- Additional relevant articles that are not cited but could support the decision must be included in "articles_potentiellement_pertinents."  
-
-Ensure that the JSON file is well-structured and contains accurate legal references to facilitate document retrieval based on context elements.
+{
+  "solution": "Type of decision (e.g., cassation, rejet, arrêt, cassation partielle, cassation totale)",
+  "parties": {
+    "demandeur": ["List of plaintiffs"],
+    "défendeur": ["List of defendants"]
+  },
+  "contexte": ["Key legal topics and themes in the case (e.g., responsabilité contractuelle, manquement à l'obligation de conseil, investissement financier)"],
+  "faits": "A structured, concise summary of the essential facts, including important dates, involved parties, and key financial or legal elements.",
+  "problème_juridique": "The core legal issue(s) in dispute, stated in a neutral way without assuming the court’s decision.",
+  "arguments": {
+    "demandeur": "The main arguments presented by the plaintiff(s).",
+    "défendeur": "The main arguments presented by the defendant(s)."
+  },
+  "motifs_décision": "The reasoning provided by the court in its ruling, including key legal principles applied (if applicable).",
+  "articles_cités": ["List of legal articles explicitly cited in the decision"],
+  "articles_suggérés": ["Additional legal articles that might be relevant based on the facts and legal issue"],
+  "montants_financiers": {
+    "réclamation": "Amount claimed by the plaintiff (if applicable).",
+    "dommages_intérêts": "Amount of damages awarded (if applicable)."
+  }
+}
 
 ---
 
-decision: {decision}
-text: {content}
+### **Instructions for Extraction:**  
+- **"solution"**: Extract explicity when mentioned the type of decision (e.g., cassation, rejet, arrêt, cassation partielle, cassation totale).
+- **"contexte"**: Identify specific legal concepts and themes relevant to the case to enhance document search accuracy.  
+- **"faits"**: Extract only the **key facts**, avoiding unnecessary procedural details. This should help match cases based on factual similarity. Do not include any dates.  
+- **"problème_juridique"**: Focus on the legal question being addressed, stated **without assuming the outcome**.  
+- **"arguments"**: Clearly differentiate between the claims of the plaintiff(s) and the defense.  
+- **"motifs_décision"**: If a reasoning section is available, summarize it concisely. If not, leave it empty.  
+- **"articles_cités"**: Include all legal articles explicitly referenced.  
+- **"articles_suggérés"**: Suggest other potentially relevant legal articles, even if not cited in the document.  
+- **"montants_financiers"**: If financial amounts (e.g., damages, claims) are mentioned, extract them explicitly. If written in words, convert them to numbers.  
+
+
+---
+
+
 """,
     )
 
@@ -112,6 +149,19 @@ text: {content}
         pass
 
 
+def preprocess_text(text: str) -> str:
+    text = text.lower()
+    text = re.sub(r"[^\w\s]", "", text)
+    text = text.translate(str.maketrans("", "", string.punctuation))
+    doc = nlp(text)
+    tokens = [
+        token.lemma_
+        for token in doc
+        if token.text not in stopwords.words("french") and token.is_alpha
+    ]
+    return " ".join(tokens)
+
+
 def read_json_content(file_path: str):
     try:
         with open(file_path, "r", encoding="utf-8", errors="ignore") as file:
@@ -125,8 +175,16 @@ def calculate_success_rate():
     raw_files = 0
     proc_files = 0
 
+    totalRaw = len(os.listdir("./raw_data"))
+    totalTemp = len(os.listdir("./temp_data"))
+    totalFiles = totalRaw + totalTemp
+
+    if totalFiles == 0:
+        cp.print_red("No files found in the directories.")
+        return
+
     with tqdm(
-        total=20000,
+        total=totalFiles,
         desc="Counting raw files",
         unit="documents",
         bar_format="[{elapsed} < {remaining}] {n_fmt}/{total_fmt} | {l_bar}{bar} {rate_fmt}{postfix}",
@@ -140,7 +198,7 @@ def calculate_success_rate():
             pbar.update(1)
 
         pbar.write(f"Raw files: {raw_files}")
-        pbar.n = 10000
+        pbar.n = totalRaw
         pbar.set_description("Counting processed files")
 
         for file in os.listdir("./temp_data"):
@@ -150,11 +208,11 @@ def calculate_success_rate():
             pbar.update(1)
 
         pbar.write(f"Processed files: {proc_files}")
-        pbar.n = 20000
+        pbar.n = totalFiles
 
     success_rate = (proc_files / raw_files) * 100
 
-    if success_rate < 80:
+    if success_rate < 95:
         cp.print_red(
             f"File summarization success rate: {success_rate:.2f}% ({proc_files}/{raw_files})"
         )
@@ -196,58 +254,74 @@ def summarize_all_files(worker_count=8):
                 try:
                     future.result()
                 except Exception as e:
-                    print(f"Error processing file {futures[future]}: {e}")
+                    pbar.write(f"Error processing file {futures[future]}: {e}")
                 finally:
                     pbar.update(1)
 
     calculate_success_rate()
 
 
-def normalize_user_input(user_input: str):
-    user_input = user_input.lower()
-    user_input = re.sub(r"[^\w\s]", "", user_input)
-    user_input = user_input.translate(str.maketrans("", "", string.punctuation))
-    doc = nlp(user_input)
-    tokens = [
-        token.lemma_
-        for token in doc
-        if token.text not in stopwords.words("french") and token.is_alpha
-    ]
-    return " ".join(tokens)
-
-
-def prepare_text_for_embedding(file_path: str, mode: str):
-    if mode == "with_context":
-        with_context = True
-    else:
-        with_context = False
-
+def prepare_text_for_embedding(file_path: str):
     try:
         with open(file_path, "r", encoding="utf-8") as file:
             data = json.load(file)
-            if with_context:
-                text = f"""éléments de contexte: {' '.join(data['éléments_contexte'])} résumé: {data['résumé']}"""
-            else:
-                text = f"""résumé: {data['résumé']}"""
 
-            text = text.lower()
-            text = re.sub(r"[^\w\s]", "", text)
-            text = text.translate(str.maketrans("", "", string.punctuation))
-            doc = nlp(text)
-            tokens = [
-                token.lemma_
-                for token in doc
-                if token.text not in stopwords.words("french") and token.is_alpha
-            ]
-            embedded_text = " ".join(tokens)
+            embedded_parts = []
+
+            # Legal Issues & Context (weight 0.4)
+            contexte_text = " ".join(data.get("contexte", []))
+            preprocessed_contexte = preprocess_text(contexte_text)
+            embedded_parts.extend([preprocessed_contexte] * 3)  # 0.3 * 10
+
+            # Factual Summary (weight 0.2)
+            faits_text = data.get("faits", "")
+            preprocessed_faits = preprocess_text(faits_text)
+            embedded_parts.extend([preprocessed_faits] * 2)
+
+            # Legal Problem & Arguments (combined weight 0.3)
+            problem_text = data.get("problème_juridique", "")
+            arguments = data.get("arguments", {})
+            demandeur_text = (
+                " ".join(arguments.get("demandeur", []))
+                if isinstance(arguments.get("demandeur"), list)
+                else arguments.get("demandeur", "")
+            )
+            defendeur_text = (
+                " ".join(arguments.get("défendeur", []))
+                if isinstance(arguments.get("défendeur"), list)
+                else arguments.get("défendeur", "")
+            )
+            arguments_combined = f"{demandeur_text} {defendeur_text}"
+            legal_problem_args = f"{problem_text} {arguments_combined}"
+            preprocessed_legal = preprocess_text(legal_problem_args)
+            embedded_parts.extend([preprocessed_legal] * 4)
+
+            # Decision & Justification (weight 0.5)
+            motifs_text = data.get("motifs_décision", "")
+            preprocessed_motifs = preprocess_text(motifs_text)
+            embedded_parts.extend([preprocessed_motifs] * 5)
+
+            # Cited Legal Articles (weight 0.3)
+            articles_text = " ".join(data.get("articles_cités", []))
+            preprocessed_articles = preprocess_text(articles_text)
+            embedded_parts.extend([preprocessed_articles] * 3)
+
+            # Monetary Amounts (weight 0.1)
+            montants = data.get("montants_financiers", {})
+            montants_text = " ".join(
+                [str(v) for v in montants.values() if v is not None]
+            )
+            preprocessed_montants = preprocess_text(montants_text)
+            embedded_parts.extend([preprocessed_montants] * 1)
+
+            embedded_text = " ".join(embedded_parts)
+
             return {
                 "embedded_text": embedded_text,
                 "id": data.get("id"),
                 "url": data.get("url"),
-                "articles_pertinents": data.get("articles_pertinents"),
-                "articles_potentiellement_pertinents": data.get(
-                    "articles_potentiellement_pertinents"
-                ),
+                "articles_cités": data.get("articles_cités"),
+                "articles_suggérés": data.get("articles_suggérés"),
             }
 
     except (KeyError, Exception, json.JSONDecodeError) as e:
@@ -255,7 +329,65 @@ def prepare_text_for_embedding(file_path: str, mode: str):
         return None
 
 
-def calculate_and_save_vectors(json_folder: str, pickle_file: str, mode: str):
+def prepare_user_prompt_for_embedding(data: str):
+
+    embedded_parts = []
+
+    # Legal Issues & Context (weight 0.4)
+    contexte_text = " ".join(data.get("contexte", []))
+    preprocessed_contexte = preprocess_text(contexte_text)
+    embedded_parts.extend([preprocessed_contexte] * 3)  # 0.3 * 10
+
+    # Factual Summary (weight 0.2)
+    faits_text = data.get("faits", "")
+    preprocessed_faits = preprocess_text(faits_text)
+    embedded_parts.extend([preprocessed_faits] * 2)
+
+    # Legal Problem & Arguments (combined weight 0.3)
+    problem_text = data.get("problème_juridique", "")
+    arguments = data.get("arguments", {})
+    demandeur_text = (
+        " ".join(arguments.get("demandeur", []))
+        if isinstance(arguments.get("demandeur"), list)
+        else arguments.get("demandeur", "")
+    )
+    defendeur_text = (
+        " ".join(arguments.get("défendeur", []))
+        if isinstance(arguments.get("défendeur"), list)
+        else arguments.get("défendeur", "")
+    )
+    arguments_combined = f"{demandeur_text} {defendeur_text}"
+    legal_problem_args = f"{problem_text} {arguments_combined}"
+    preprocessed_legal = preprocess_text(legal_problem_args)
+    embedded_parts.extend([preprocessed_legal] * 4)
+
+    # Decision & Justification (weight 0.5)
+    motifs_text = data.get("motifs_décision", "")
+    preprocessed_motifs = preprocess_text(motifs_text)
+    embedded_parts.extend([preprocessed_motifs] * 5)
+
+    # Cited Legal Articles (weight 0.3)
+    articles_text = " ".join(data.get("articles_cités", []))
+    preprocessed_articles = preprocess_text(articles_text)
+    embedded_parts.extend([preprocessed_articles] * 3)
+
+    # Monetary Amounts (weight 0.1)
+    montants = data.get("montants_financiers", {})
+    montants_text = " ".join([str(v) for v in montants.values() if v is not None])
+    preprocessed_montants = preprocess_text(montants_text)
+    embedded_parts.extend([preprocessed_montants] * 1)
+
+    embedded_text = " ".join(embedded_parts)
+
+    return {
+        "embedded_text": embedded_text,
+        "id": data.get("id"),
+        "url": data.get("url"),
+        "articles_cités": data.get("articles_cités"),
+    }
+
+
+def calculate_and_save_vectors(json_folder: str, pickle_file: str):
     results_and_metadata = []
     json_files = [f for f in os.listdir(json_folder) if f.endswith(".json")]
 
@@ -268,7 +400,7 @@ def calculate_and_save_vectors(json_folder: str, pickle_file: str, mode: str):
         ascii=" ▖▘▝▗▚▞█",
     ):
         file_path = os.path.join(json_folder, json_file)
-        data = prepare_text_for_embedding(file_path, mode)
+        data = prepare_text_for_embedding(file_path)
         if data and data.get("embedded_text"):
             results_and_metadata.append(data)
 
@@ -294,28 +426,120 @@ def load_vectors(pickle_file):
         return None, None, None
 
 
-def check_if_vectors_exist(pickle_file: str, mode: str):
+def check_if_vectors_exist(pickle_file: str):
     if not os.path.exists(pickle_file):
-        calculate_and_save_vectors("./temp_data", pickle_file, mode)
+        calculate_and_save_vectors("./temp_data", pickle_file)
 
 
-def calculate_similarity(usr_input: str, mode: str):
+def summarize_user_prompt(usr_input: str):
 
-    if mode == "with_context":
-        pickle_file = "./vectors/with_context_elements.pkl"
-    else:
-        pickle_file = "./vectors/without_context_elements.pkl"
+    with tqdm(
+        total=5,
+        desc="Traitement",
+        colour="blue",
+        bar_format="[{elapsed}] {n_fmt}/{total_fmt} | {l_bar}{bar}",
+    ) as pbar:
 
-    check_if_vectors_exist(pickle_file, mode)
+        pbar.set_description("Vérification de l'entrée utilisateur")
+        pbar.update(1)
+
+        generate_content_config = types.GenerateContentConfig(
+            temperature=0.8,
+            top_p=0.95,
+            top_k=40,
+            max_output_tokens=2048,
+            response_mime_type="application/json",
+            response_schema=UserPrompt,
+            system_instruction="""
+        Extrayez les informations juridiques du prompt utilisateur en suivant CE FORMAT JSON :  
+
+{  
+  "solution": "Type de décision (cassation, rejet, etc.) si explicitement mentionné",  
+  "contexte": ["Concepts juridiques clés (max 5 termes)", "ex: responsabilité contractuelle", "défaut de motivation"],  
+  "faits": "Résumé factuel concis SANS DATES : parties impliquées, montants, actes juridiques",  
+  "problème_juridique": "Question légale neutre formulée comme une interrogation ouverte",  
+  "arguments": {  
+    "demandeur": "Arguments principaux du demandeur",  
+    "défendeur": "Arguments principaux du défendeur"  
+  },  
+  "motifs_décision": "Raisonnement juridique appliqué (si disponible)",  
+  "articles_cités": ["Articles mentionnés explicitement"],  
+  "montants_financiers": {  
+    "réclamation": "Montant en chiffres (ex: 50000)",  
+    "dommages_intérêts": "Montant en chiffres (ex: 3000)"  
+  }  
+}  
+
+---  
+
+### Règles d'extraction :  
+
+1. **Solution** :  
+   - Capturer "cassation", "rejet", etc. même implicites ("la Cour a annulé" → "cassation")  
+
+2. **Faits** :  
+   - Exclure les dates et détails procéduraux  
+   - Ex: "Investissement de un million d'euros conseillé par Capelis"  
+
+3. **Montants** :  
+   - Convertir les écritures littérales → chiffres ("cinquante mille" → 50000)  
+   - Formater sans espaces/€ : "50 000" → 50000  
+
+4. **Contextes juridiques** :  
+   - Privilégier les notions codifiées : "manquement à l'obligation de conseil" plutôt que "mauvaise advice"  
+   
+5. "articles_cités": 
+    - Inclure les articles explicitement mentionnés dans le texte, dans le format "article 1234 du code civil" ou "article L. 123-4 du code de la consommation".
+
+        ---
+
+        """,
+        )
+
+        pbar.set_description("Envoi de la requête")
+        pbar.update(1)
+
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=usr_input,
+            config=generate_content_config,
+        )
+
+        pbar.set_description("Traitement de la réponse")
+        pbar.update(1)
+
+        processed_data = None
+        if response and response.text:
+            try:
+                processed_data = json.loads(response.text)
+            except json.JSONDecodeError:
+                pass
+        pbar.update(1)
+
+        pbar.set_description("Dérniere vérification")
+        pbar.update(1)
+        return processed_data
+
+
+def calculate_similarity(usr_input: str):
+
+    pickle_file = "./vectors/vector.pkl"
+
+    check_if_vectors_exist(pickle_file)
 
     tfidf_matrix, results_and_metadata, vectorizer = load_vectors(pickle_file)
 
     if tfidf_matrix is None:
-        print("Vector data not found. Please calculate vectors first.")
+        cp.print_red("Vector data not found. Please calculate vectors first.")
         return
 
-    normalized_user_description = normalize_user_input(usr_input)
-    user_vector = vectorizer.transform([normalized_user_description])
+    summarized_usr_input = summarize_user_prompt(usr_input)
+    normalized_user_description = prepare_user_prompt_for_embedding(
+        summarized_usr_input
+    )
+    usr_embedded_text = normalized_user_description.get("embedded_text")
+
+    user_vector = vectorizer.transform([usr_embedded_text])
 
     cosine_sim_matrix = cosine_similarity(user_vector, tfidf_matrix)
 
@@ -339,10 +563,8 @@ def show_results(similarity_list, results_and_metadata):
     for i, similarity in similarity_list:
         metadata = results_and_metadata[i]
         id = metadata.get("id")
-        articles = metadata.get("articles_pertinents", [])
-        articles_potentiellement_pertinents = metadata.get(
-            "articles_potentiellement_pertinents", []
-        )
+        articles_cités = metadata.get("articles_cités", [])
+        articles_suggérés = metadata.get("articles_suggérés", [])
         url = metadata.get("url", "")
 
         if similarity > 65:
@@ -357,7 +579,7 @@ def show_results(similarity_list, results_and_metadata):
             cp.print_yellow(f"{similarity:.2f}%")
             low_similarity_count += 1
 
-        elif abs(similarity - 25) < 1 and ten_similarity_count < 1:
+        elif abs(similarity - 25) < 1 and ten_similarity_count < 2:
             print(f"% similarité avec doc ID: {id}", end=" -> ")
             cp.print_red(f"{similarity:.2f}%")
             ten_similarity_count += 1
@@ -367,11 +589,11 @@ def show_results(similarity_list, results_and_metadata):
 
         if i < len(results_and_metadata):
             print("Articles pertinents: ")
-            for article in articles:
+            for article in articles_cités:
                 cp.print_cyan(str(article))
-            if articles_potentiellement_pertinents:
+            if articles_suggérés:
                 print("Articles potentiellement pertinents: ")
-                for article in articles_potentiellement_pertinents:
+                for article in articles_suggérés:
                     cp.print_cyan(str(article))
             print("URL: ", end=" ")
             cp.print_magenta(url)
@@ -383,18 +605,10 @@ def show_results(similarity_list, results_and_metadata):
 
 def find_recommendations():
 
-    usr_input = input(
-        "Donnez des éléments de contexte (licenciement, blessure, excés de pouvoir, etc.). Si vous en avez pas, tapez la touche Entrer: "
-    )
-    if usr_input == "":
-        mode = "with_context"
-    else:
-        mode = "without_context"
-
     usr_input = input("Donnez un résumé de la situation: ")
 
     if usr_input == "":
         cp.print_red("Le résumé ne peut pas être vide.")
         return
 
-    calculate_similarity(usr_input, mode)
+    calculate_similarity(usr_input)
