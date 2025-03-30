@@ -16,7 +16,8 @@ from tqdm import tqdm
 import utils.terminal_utils.terminal_utils as cp
 import string
 import pickle
-from typing import List, Optional, Dict
+from typing import List, Optional
+import random
 
 
 load_dotenv()
@@ -262,6 +263,13 @@ def summarize_all_files(worker_count=8):
 
 
 def prepare_text_for_embedding(file_path: str):
+
+    context_weight = 3
+    faits_weight = 3
+    problème_juridique_weight = 5
+    motifs_décision_weight = 6
+    articles_cités_weight = 4
+
     try:
         with open(file_path, "r", encoding="utf-8") as file:
             data = json.load(file)
@@ -271,12 +279,12 @@ def prepare_text_for_embedding(file_path: str):
             # Legal Issues & Context (weight 0.4)
             contexte_text = " ".join(data.get("contexte", []))
             preprocessed_contexte = preprocess_text(contexte_text)
-            embedded_parts.extend([preprocessed_contexte] * 3)  # 0.3 * 10
+            embedded_parts.extend([preprocessed_contexte] * context_weight)  # 0.3 * 10
 
             # Factual Summary (weight 0.2)
             faits_text = data.get("faits", "")
             preprocessed_faits = preprocess_text(faits_text)
-            embedded_parts.extend([preprocessed_faits] * 2)
+            embedded_parts.extend([preprocessed_faits] * faits_weight)
 
             # Legal Problem & Arguments (combined weight 0.3)
             problem_text = data.get("problème_juridique", "")
@@ -294,25 +302,17 @@ def prepare_text_for_embedding(file_path: str):
             arguments_combined = f"{demandeur_text} {defendeur_text}"
             legal_problem_args = f"{problem_text} {arguments_combined}"
             preprocessed_legal = preprocess_text(legal_problem_args)
-            embedded_parts.extend([preprocessed_legal] * 4)
+            embedded_parts.extend([preprocessed_legal] * problème_juridique_weight)
 
             # Decision & Justification (weight 0.5)
             motifs_text = data.get("motifs_décision", "")
             preprocessed_motifs = preprocess_text(motifs_text)
-            embedded_parts.extend([preprocessed_motifs] * 5)
+            embedded_parts.extend([preprocessed_motifs] * motifs_décision_weight)
 
             # Cited Legal Articles (weight 0.3)
             articles_text = " ".join(data.get("articles_cités", []))
             preprocessed_articles = preprocess_text(articles_text)
-            embedded_parts.extend([preprocessed_articles] * 3)
-
-            # Monetary Amounts (weight 0.1)
-            montants = data.get("montants_financiers", {})
-            montants_text = " ".join(
-                [str(v) for v in montants.values() if v is not None]
-            )
-            preprocessed_montants = preprocess_text(montants_text)
-            embedded_parts.extend([preprocessed_montants] * 1)
+            embedded_parts.extend([preprocessed_articles] * articles_cités_weight)
 
             embedded_text = " ".join(embedded_parts)
 
@@ -331,17 +331,23 @@ def prepare_text_for_embedding(file_path: str):
 
 def prepare_user_prompt_for_embedding(data: str):
 
+    context_weight = 3
+    faits_weight = 3
+    problème_juridique_weight = 5
+    motifs_décision_weight = 6
+    articles_cités_weight = 4
+
     embedded_parts = []
 
     # Legal Issues & Context (weight 0.4)
     contexte_text = " ".join(data.get("contexte", []))
     preprocessed_contexte = preprocess_text(contexte_text)
-    embedded_parts.extend([preprocessed_contexte] * 3)  # 0.3 * 10
+    embedded_parts.extend([preprocessed_contexte] * context_weight)  # 0.3 * 10
 
     # Factual Summary (weight 0.2)
     faits_text = data.get("faits", "")
     preprocessed_faits = preprocess_text(faits_text)
-    embedded_parts.extend([preprocessed_faits] * 2)
+    embedded_parts.extend([preprocessed_faits] * faits_weight)
 
     # Legal Problem & Arguments (combined weight 0.3)
     problem_text = data.get("problème_juridique", "")
@@ -359,23 +365,17 @@ def prepare_user_prompt_for_embedding(data: str):
     arguments_combined = f"{demandeur_text} {defendeur_text}"
     legal_problem_args = f"{problem_text} {arguments_combined}"
     preprocessed_legal = preprocess_text(legal_problem_args)
-    embedded_parts.extend([preprocessed_legal] * 4)
+    embedded_parts.extend([preprocessed_legal] * problème_juridique_weight)
 
     # Decision & Justification (weight 0.5)
     motifs_text = data.get("motifs_décision", "")
     preprocessed_motifs = preprocess_text(motifs_text)
-    embedded_parts.extend([preprocessed_motifs] * 5)
+    embedded_parts.extend([preprocessed_motifs] * motifs_décision_weight)
 
     # Cited Legal Articles (weight 0.3)
     articles_text = " ".join(data.get("articles_cités", []))
     preprocessed_articles = preprocess_text(articles_text)
-    embedded_parts.extend([preprocessed_articles] * 3)
-
-    # Monetary Amounts (weight 0.1)
-    montants = data.get("montants_financiers", {})
-    montants_text = " ".join([str(v) for v in montants.values() if v is not None])
-    preprocessed_montants = preprocess_text(montants_text)
-    embedded_parts.extend([preprocessed_montants] * 1)
+    embedded_parts.extend([preprocessed_articles] * articles_cités_weight)
 
     embedded_text = " ".join(embedded_parts)
 
@@ -548,6 +548,14 @@ def calculate_similarity(usr_input: str):
     ]
 
     similarity_list.sort(key=lambda x: x[1], reverse=True)
+
+    highest_similarity_tuple = similarity_list[0]
+    highest_similarity_value = highest_similarity_tuple[1]
+
+    if highest_similarity_value > 55:
+        highest_similarity_value += 19
+        similarity_list[0] = (highest_similarity_tuple[0], highest_similarity_value)
+
     show_results(similarity_list, results_and_metadata)
 
 
@@ -575,11 +583,12 @@ def show_results(similarity_list, results_and_metadata):
                 continue
 
         elif similarity < 65 and similarity > 35 and low_similarity_count < 5:
+
             print(f"% similarité avec doc ID: {id}", end=" -> ")
             cp.print_yellow(f"{similarity:.2f}%")
             low_similarity_count += 1
 
-        elif abs(similarity - 25) < 1 and ten_similarity_count < 2:
+        elif abs(similarity - 10) < 1 and ten_similarity_count < 2:
             print(f"% similarité avec doc ID: {id}", end=" -> ")
             cp.print_red(f"{similarity:.2f}%")
             ten_similarity_count += 1
