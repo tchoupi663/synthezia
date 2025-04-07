@@ -17,7 +17,7 @@ import utils.terminal_utils.terminal_utils as cp
 import string
 import pickle
 from typing import List, Optional
-import random
+import copy
 
 
 load_dotenv()
@@ -529,7 +529,7 @@ def calculate_similarity(usr_input: str):
 
     check_if_vectors_exist(pickle_file)
 
-    tfidf_matrix, results_and_metadata, vectorizer = load_vectors(pickle_file)
+    tfidf_matrix, results_and_metadata, vectorizer_original = load_vectors(pickle_file)
 
     if tfidf_matrix is None:
         cp.print_red("Vector data not found. Please calculate vectors first.")
@@ -540,6 +540,8 @@ def calculate_similarity(usr_input: str):
         summarized_usr_input
     )
     usr_embedded_text = normalized_user_description.get("embedded_text")
+
+    vectorizer = copy.deepcopy(vectorizer_original)
 
     user_vector = vectorizer.transform([usr_embedded_text])
 
