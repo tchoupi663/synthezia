@@ -554,7 +554,7 @@ def calculate_similarity(usr_input: str):
     highest_similarity_tuple = similarity_list[0]
     highest_similarity_value = highest_similarity_tuple[1]
 
-    if highest_similarity_value > 54:
+    if highest_similarity_value > 52:
         highest_similarity_value += 19
         similarity_list[0] = (highest_similarity_tuple[0], highest_similarity_value)
 
@@ -590,7 +590,7 @@ def show_results(similarity_list, results_and_metadata):
             cp.print_yellow(f"{similarity:.2f}%")
             low_similarity_count += 1
 
-        elif abs(similarity - 10) < 1 and ten_similarity_count < 2:
+        elif abs(similarity - 10) < 1 and ten_similarity_count < 5:
             print(f"% similarité avec doc ID: {id}", end=" -> ")
             cp.print_red(f"{similarity:.2f}%")
             ten_similarity_count += 1
