@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
-import utils.terminal_utils.terminal_utils as cp
-import utils.dbUpdate.dbUpdate as db
-import utils.ai_utils.ai_utils as ai
+import utils.colorama_utils as cp
+import utils.database_utils as db
+import utils.api_utils as ai
 from sys import exit, argv
 import os
 
@@ -78,7 +78,7 @@ def userMenu():
         clear_screen()
         print_logo()
 
-        cp.print_magenta("                     1. Donner des recommendantions")
+        cp.print_magenta("                     1. Donner des recommandations")
         cp.print_blue("                        9. Quitter")
         choice = input("                           Sélectionnez une option (1 ou 9): ")
 
